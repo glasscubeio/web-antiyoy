@@ -656,6 +656,16 @@ export function fixProvinces(state: GameState): GameState {
       }
 
       if (capitalKeysInFragment.length === 0) {
+        // Fragments smaller than 2 tiles cannot sustain a capital — they die off
+        if (fragment.size < 2) {
+          for (const k of fragment) {
+            s.tiles[k].owner = null
+            s.tiles[k].unit = null
+            s.tiles[k].structure = null
+          }
+          s.log = [`${s.players[playerId].name}: an isolated tile was abandoned!`, ...s.log.slice(0, 9)]
+          continue
+        }
         // Province was cut off — auto-create a capital (free, game mechanic)
         let targetKey: string | null = null
         for (const k of fragment) {

@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { GameState, UnitType, StructureType, ActionMode } from '../types'
 import { generateMap } from '../lib/mapGenerator'
 import { hexKey } from '../lib/hexMath'
-import { MAP_SIZES, MapSize } from '../lib/constants'
+import { MAP_SIZES, UNIT_ORDER, MapSize } from '../lib/constants'
 import {
   handleTileClick as engineHandleTileClick,
   endTurn,
@@ -18,9 +18,17 @@ import { playSound, startMusicIfNeeded } from '../lib/sound'
 const SAVE_KEY = 'antiyoy_save'
 const HUMAN_PLAYER = 0
 
-function makeInitialState(playerCount: number, mapSize: MapSize = 'medium'): GameState {
+const STRUCT_CYCLE: StructureType[] = ['farm', 'tower', 'strongTower']
+
+function makeInitialState(
+  playerCount: number,
+  mapSize: MapSize = 'medium',
+  colorOverrides?: string[]
+): GameState {
   const radius = MAP_SIZES[mapSize]
-  const { tiles, players, provinceGold, farmsBought } = generateMap(playerCount, undefined, radius)
+  const { tiles, players, provinceGold, farmsBought } = generateMap(
+    playerCount, undefined, radius, colorOverrides
+  )
   return {
     tiles, players, provinceGold, farmsBought,
     currentPlayer: 0, turn: 1, phase: 'playing', winner: null,
@@ -30,7 +38,7 @@ function makeInitialState(playerCount: number, mapSize: MapSize = 'medium'): Gam
   }
 }
 
-export function useGame(playerCount: number = 2) {
+export function useGame() {
   const [state, setState] = useState<GameState>(() => {
     const saved = localStorage.getItem(SAVE_KEY)
     if (saved) {
@@ -42,10 +50,9 @@ export function useGame(playerCount: number = 2) {
         return parsed
       } catch { /* fall through */ }
     }
-    return makeInitialState(playerCount)
+    return makeInitialState(2)
   })
 
-  // Always-fresh state ref so callbacks with empty deps can read current state
   const stateRef = useRef(state)
   stateRef.current = state
 
@@ -58,7 +65,7 @@ export function useGame(playerCount: number = 2) {
     localStorage.setItem(SAVE_KEY, JSON.stringify(state))
   }, [state])
 
-  // AI turn trigger
+  // AI turn trigger — runs for any non-human player
   useEffect(() => {
     if (state.phase === 'gameover') return
     if (state.currentPlayer === HUMAN_PLAYER) return
@@ -82,7 +89,6 @@ export function useGame(playerCount: number = 2) {
     const tile = s.tiles[key]
     const mode = s.actionMode
 
-    // Trigger appropriate sound based on what's about to happen
     if (mode.type === 'buyingUnit') {
       playSound('coin')
     } else if (mode.type === 'buyingStructure') {
@@ -111,7 +117,7 @@ export function useGame(playerCount: number = 2) {
       }
       return next
     })
-  }, []) // uses stateRef.current
+  }, [])
 
   const doEndTurn = useCallback(() => {
     if (stateRef.current.currentPlayer !== HUMAN_PLAYER) return
@@ -158,14 +164,14 @@ export function useGame(playerCount: number = 2) {
     setState(s => setActionMode(s, { type: 'idle' }))
   }, [])
 
-  const newGame = useCallback((pc?: number, sz: MapSize = 'medium') => {
+  const newGame = useCallback((pc: number, sz: MapSize, colorOverrides?: string[]) => {
     playSound('menu_button')
     localStorage.removeItem(SAVE_KEY)
     aiRunning.current = false
     undoStack.current = []
     setCanUndo(false)
-    setState(makeInitialState(pc ?? playerCount, sz))
-  }, [playerCount])
+    setState(makeInitialState(pc, sz, colorOverrides))
+  }, [])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -173,28 +179,73 @@ export function useGame(playerCount: number = 2) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       const s = stateRef.current
       if (s.phase === 'gameover') return
+      if (s.currentPlayer !== HUMAN_PLAYER) return
 
       switch (e.key) {
+        // End turn: Enter or J
         case 'Enter':
+        case 'j':
+        case 'J':
           e.preventDefault()
           doEndTurn()
           break
-        case 'Delete':
+
+        // Cancel action: Escape or Z
+        case 'Escape':
+        case 'z':
+        case 'Z':
           e.preventDefault()
-          if (s.currentPlayer === HUMAN_PLAYER) {
-            if (s.actionMode.type !== 'idle') cancelAction()
-            else doUndo()
+          cancelAction()
+          break
+
+        // Undo: Backspace or U (Delete kept for legacy)
+        case 'Delete':
+        case 'Backspace':
+        case 'u':
+        case 'U':
+          e.preventDefault()
+          if (s.actionMode.type !== 'idle') cancelAction()
+          else doUndo()
+          break
+
+        // T: cycle structures (farm → tower → strongTower → cancel)
+        case 't':
+        case 'T': {
+          e.preventDefault()
+          if (s.actionMode.type === 'buyingStructure') {
+            const idx = STRUCT_CYCLE.indexOf(s.actionMode.structureType)
+            if (idx >= STRUCT_CYCLE.length - 1) cancelAction()
+            else startBuyingStructure(STRUCT_CYCLE[idx + 1])
+          } else {
+            startBuyingStructure('farm')
           }
           break
-        case '1': if (s.currentPlayer === HUMAN_PLAYER) startBuyingUnit('peasant'); break
-        case '2': if (s.currentPlayer === HUMAN_PLAYER) startBuyingUnit('spearman'); break
-        case '3': if (s.currentPlayer === HUMAN_PLAYER) startBuyingUnit('knight'); break
-        case '4': if (s.currentPlayer === HUMAN_PLAYER) startBuyingUnit('baron'); break
+        }
+
+        // S: cycle units (peasant → spearman → knight → baron → cancel)
+        case 's':
+        case 'S': {
+          e.preventDefault()
+          if (s.actionMode.type === 'buyingUnit') {
+            const idx = UNIT_ORDER.indexOf(s.actionMode.unitType)
+            if (idx >= UNIT_ORDER.length - 1) cancelAction()
+            else startBuyingUnit(UNIT_ORDER[idx + 1])
+          } else {
+            startBuyingUnit('peasant')
+          }
+          break
+        }
+
+        // Legacy number keys for direct unit selection
+        case '1': startBuyingUnit('peasant'); break
+        case '2': startBuyingUnit('spearman'); break
+        case '3': startBuyingUnit('knight'); break
+        case '4': startBuyingUnit('baron'); break
       }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [doEndTurn, doUndo, cancelAction, startBuyingUnit])
+  }, [doEndTurn, doUndo, cancelAction, startBuyingUnit, startBuyingStructure])
 
   const currentPlayerObj = state.players[state.currentPlayer]
   const isHumanTurn = state.currentPlayer === HUMAN_PLAYER

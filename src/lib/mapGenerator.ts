@@ -10,14 +10,79 @@ function seededRandom(seed: number) {
   }
 }
 
+/**
+ * Generate an organic island shape using radial sinusoidal boundary perturbation.
+ * Larger radius → more Fourier modes → more complex coastline.
+ */
+function generateOrganicIsland(
+  allCoords: Array<{ q: number; r: number }>,
+  radius: number,
+  rng: () => number
+): Set<string> {
+  // More modes for bigger maps → more complex / varied shapes
+  const numModes = Math.min(3 + Math.floor(radius / 2.5), 12)
+
+  const modes = Array.from({ length: numModes }, (_, i) => ({
+    freq: i + 1,
+    amp: radius * 0.1 * Math.pow(0.72, i) * (0.4 + rng() * 0.8),
+    phase: rng() * Math.PI * 2,
+  }))
+
+  const baseRadius = radius * (0.68 + rng() * 0.14)
+
+  function radiusBoundary(angle: number): number {
+    let r = baseRadius
+    for (const m of modes) {
+      r += m.amp * Math.cos(m.freq * angle + m.phase)
+    }
+    return Math.max(1.5, r)
+  }
+
+  // Add peninsula blobs for medium+ maps
+  const peninsulaCount = radius >= 8 ? 1 + Math.floor(rng() * (radius >= 14 ? 4 : 2)) : 0
+  const peninsulas: Array<{ q: number; r: number; rad: number }> = []
+  for (let i = 0; i < peninsulaCount; i++) {
+    const angle = rng() * Math.PI * 2
+    const d = radius * (0.5 + rng() * 0.35)
+    peninsulas.push({
+      q: Math.round(Math.cos(angle) * d),
+      r: Math.round(Math.sin(angle) * d * 1.15),
+      rad: radius * (0.1 + rng() * 0.22),
+    })
+  }
+
+  const included = new Set<string>()
+
+  for (const { q, r } of allCoords) {
+    const dist = hexDistance({ q, r }, { q: 0, r: 0 })
+    // Use axial→cartesian angle for the boundary function
+    const cartX = q + r * 0.5
+    const cartY = r * (Math.sqrt(3) / 2)
+    const angle = Math.atan2(cartY, cartX)
+    const limit = radiusBoundary(angle)
+
+    const inPeninsula = peninsulas.some(
+      p => hexDistance({ q, r }, { q: p.q, r: p.r }) <= p.rad
+    )
+
+    if (dist <= limit || inPeninsula) {
+      included.add(hexKey(q, r))
+    }
+  }
+
+  included.add(hexKey(0, 0))
+  return included
+}
+
 export function generateMap(
   playerCount: number = 2,
   seed?: number,
-  radius: number = MAP_RADIUS
+  radius: number = MAP_RADIUS,
+  colorOverrides?: string[]
 ): Pick<GameState, 'tiles' | 'players' | 'provinceGold' | 'farmsBought'> {
   const rng = seededRandom(seed ?? Date.now())
 
-  // Build hex island
+  // Build all hex coords within bounding radius
   const allCoords: Array<{ q: number; r: number }> = []
   for (let q = -radius; q <= radius; q++) {
     for (let r = -radius; r <= radius; r++) {
@@ -27,22 +92,13 @@ export function generateMap(
     }
   }
 
-  // Random island shape
-  const included = new Set<string>()
-  for (const { q, r } of allCoords) {
-    const dist = hexDistance({ q, r }, { q: 0, r: 0 })
-    const noise = rng() * 2.5
-    if (dist + noise <= radius - 0.5) {
-      included.add(hexKey(q, r))
-    }
-  }
+  // Organic island shape
+  const included = generateOrganicIsland(allCoords, radius, rng)
 
-  // Ensure connectivity by flood filling from center
+  // Ensure connectivity by flood fill from center
   const connected = new Set<string>()
   const queue: Array<{ q: number; r: number }> = [{ q: 0, r: 0 }]
-  if (!included.has(hexKey(0, 0))) included.add(hexKey(0, 0))
   connected.add(hexKey(0, 0))
-
   while (queue.length > 0) {
     const cur = queue.shift()!
     for (const nb of hexNeighbors(cur.q, cur.r)) {
@@ -54,7 +110,7 @@ export function generateMap(
     }
   }
 
-  // Build tiles with appropriate terrain
+  // Build tiles with terrain
   const tiles: Record<string, HexTile> = {}
   for (const k of connected) {
     const [q, r] = k.split(',').map(Number)
@@ -74,15 +130,21 @@ export function generateMap(
   const farmsBought: Record<number, number> = {}
   const startPositions = findStartPositions(tiles, playerCount, rng, radius)
 
+  // Human player (0) takes their chosen color.
+  // AI players (1+) take remaining PLAYER_COLORS in order, skipping the human's color.
+  const humanColor = colorOverrides?.[0] ?? PLAYER_COLORS[0]
+  const aiColorPool = PLAYER_COLORS.filter(c => c !== humanColor)
+  const colorToName = Object.fromEntries(PLAYER_COLORS.map((c, i) => [c, PLAYER_NAMES[i]]))
+
   for (let i = 0; i < playerCount; i++) {
+    const color = i === 0 ? humanColor : (aiColorPool[i - 1] ?? PLAYER_COLORS[i])
     players.push({
       id: i,
-      name: PLAYER_NAMES[i],
-      color: PLAYER_COLORS[i],
+      name: i === 0 ? (colorToName[humanColor] ?? PLAYER_NAMES[0]) : (colorToName[color] ?? PLAYER_NAMES[i]),
+      color,
       alive: true,
     })
 
-    // Give each player a starting cluster
     const center = startPositions[i]
     const clusterKeys = [hexKey(center.q, center.r)]
     for (const nb of hexNeighbors(center.q, center.r)) {
@@ -97,12 +159,10 @@ export function generateMap(
       tiles[k].structure = null
     }
 
-    // Capital at center
     const capitalKey = hexKey(center.q, center.r)
     tiles[capitalKey].structure = { type: 'capital' }
     provinceGold[capitalKey] = STARTING_PROVINCE_GOLD
 
-    // Starting peasant adjacent to capital
     const adj = hexNeighbors(center.q, center.r).find(
       nb => tiles[hexKey(nb.q, nb.r)]?.owner === i && !tiles[hexKey(nb.q, nb.r)].unit
     )
@@ -126,13 +186,12 @@ function findStartPositions(
     return { q, r }
   })
 
-  // Sort by distance from center descending to prefer outer positions
   coords.sort((a, b) => hexDistance(b, { q: 0, r: 0 }) - hexDistance(a, { q: 0, r: 0 }))
 
   const positions: Array<{ q: number; r: number }> = []
   const angleSlice = (2 * Math.PI) / count
   const jitter = rng() * Math.PI * 2
-  const minPlayerDist = Math.max(3, Math.round(radius * 0.6))
+  const minPlayerDist = Math.max(3, Math.round(radius * 0.55))
 
   for (let i = 0; i < count; i++) {
     const targetAngle = jitter + i * angleSlice
@@ -142,7 +201,9 @@ function findStartPositions(
     let bestScore = Infinity
 
     for (const c of coords) {
-      const angle = Math.atan2(c.r, c.q)
+      const cartX = c.q + c.r * 0.5
+      const cartY = c.r * (Math.sqrt(3) / 2)
+      const angle = Math.atan2(cartY, cartX)
       const dist = hexDistance(c, { q: 0, r: 0 })
       let angleDiff = Math.abs(angle - targetAngle)
       if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff

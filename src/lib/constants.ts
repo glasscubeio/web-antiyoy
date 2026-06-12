@@ -33,13 +33,28 @@ export const STRUCTURE_STATS: Record<StructureType, StructureStats> = {
 
 export const UNIT_ORDER: UnitType[] = ['peasant', 'spearman', 'knight', 'baron']
 
-export const PLAYER_COLORS = ['#3B82F6', '#EF4444', '#22C55E', '#F59E0B']
-export const PLAYER_NAMES = ['Blue', 'Red', 'Green', 'Yellow']
+export const PLAYER_COLORS = [
+  '#3B82F6', '#EF4444', '#22C55E', '#F59E0B',
+  '#A855F7', '#EC4899', '#14B8A6', '#F97316', '#6366F1', '#10B981',
+]
+export const PLAYER_NAMES = [
+  'Blue', 'Red', 'Green', 'Yellow', 'Purple', 'Pink', 'Teal', 'Orange', 'Indigo', 'Emerald',
+]
+
+// Each of the 10 PLAYER_COLORS maps one-to-one to an army slot.
+// The player selects their color from this list; AI armies take the rest in order.
+export const SELECTABLE_COLORS = PLAYER_COLORS
 
 export const MAP_RADIUS = 8
 
 export const MAP_SIZES = { small: 5, medium: 8, large: 16 } as const
 export type MapSize = keyof typeof MAP_SIZES
+
+export const MAX_ARMIES: Record<MapSize, number> = {
+  small: 4,
+  medium: 7,
+  large: 10,
+}
 
 // Economy constants
 export const FARM_INCOME = 4          // income per farm tile (replaces normal 1)

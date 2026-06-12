@@ -14,10 +14,11 @@ interface Props {
   onBuyUnit: (u: UnitType) => void
   onBuyStructure: (t: StructureType) => void
   onCancel: () => void
+  onOpenRules: () => void
 }
 
 export default function MobileControls({
-  state, isHumanTurn, onEndTurn, onBuyUnit, onBuyStructure, onCancel,
+  state, isHumanTurn, onEndTurn, onBuyUnit, onBuyStructure, onCancel, onOpenRules,
 }: Props) {
   const mode = state.actionMode
 
@@ -62,6 +63,15 @@ export default function MobileControls({
         </div>
       )}
 
+      {/* Rules button */}
+      <button
+        onPointerDown={onOpenRules}
+        className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-900/80 border border-gray-600 text-gray-300 text-sm font-bold shadow touch-none select-none active:scale-95 transition-transform"
+        title="Game Rules"
+      >
+        ?
+      </button>
+
       {/* Soldier cycle button */}
       <button
         onPointerDown={handleSoldier}
@@ -75,7 +85,6 @@ export default function MobileControls({
         }`}
       >
         <img src={unitStat.sprite} alt={unitStat.label} className="w-7 h-7 object-contain" />
-        {/* Rank dots */}
         <div className="absolute -bottom-1 flex gap-0.5">
           {UNIT_ORDER.map((_, i) => (
             <span
@@ -101,7 +110,6 @@ export default function MobileControls({
         }`}
       >
         <span className="text-xl leading-none">{STRUCTURE_ICONS[activeStructure]}</span>
-        {/* Rank dots */}
         <div className="absolute -bottom-1 flex gap-0.5">
           {STRUCTURE_CYCLE.map((_, i) => (
             <span

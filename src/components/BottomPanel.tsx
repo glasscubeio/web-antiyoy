@@ -143,10 +143,10 @@ export default function BottomPanel({
         {canUndo && (
           <button
             onClick={onUndo}
-            title="Undo last action [Delete]"
+            title="Undo last action [Backspace / U]"
             className="px-3 py-2 rounded text-sm border border-gray-600 text-gray-300 hover:text-white hover:border-gray-400 transition-colors"
           >
-            ↩ Undo <span className="text-[10px] opacity-50 font-mono">Del</span>
+            ↩ Undo <span className="text-[10px] opacity-50 font-mono">⌫/U</span>
           </button>
         )}
         {mode.type !== 'idle' && (
@@ -162,7 +162,7 @@ export default function BottomPanel({
           title="End Turn [Enter]"
           className="px-4 py-2 rounded text-sm font-bold bg-yellow-500 hover:bg-yellow-400 text-black transition-colors"
         >
-          End Turn <span className="text-[10px] opacity-60 font-normal ml-1">↵</span>
+          End Turn <span className="text-[10px] opacity-60 font-normal ml-1">↵/J</span>
         </button>
       </div>
     </div>
