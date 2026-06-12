@@ -1,0 +1,33 @@
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream
+        run: |
+          git remote add upstream https://github.com/nodiry/web-antiyoy.git
+          git fetch upstream
+
+      - name: Sync main
+        run: |
+          git checkout main
+          git merge upstream/main --no-edit
+
+      - name: Push
+        run: |
+          git push origin main
